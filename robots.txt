@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /abubu.com.zip
+
+# Sitemap
+Sitemap: https://abubu.com.pe/sitemap.xml
+
+# Crawl-delay recomendado
+Crawl-delay: 5
