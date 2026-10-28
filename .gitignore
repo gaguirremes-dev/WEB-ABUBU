@@ -1,0 +1,12 @@
+# Credenciales SMTP (nunca versionar)
+/config/mail.php
+
+# Datos personales del Libro de Reclamaciones
+/data/records/
+/data/counter.txt
+/data/mail-error.log
+
+# Basura del sistema
+.DS_Store
+Thumbs.db
+*.tmp
