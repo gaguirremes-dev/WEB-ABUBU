@@ -448,6 +448,10 @@ $titulo = $constancia !== null
   <meta name="description" content="Libro de Reclamaciones Virtual de Abubu. Registra tu reclamo o queja en línea y recibe tu constancia por correo. Plazo de respuesta: 30 días calendario.">
   <meta name="robots" content="<?= $constancia !== null ? 'noindex, nofollow' : 'index, follow' ?>">
   <meta name="theme-color" content="#1f3a6f">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/favicon-192.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <link rel="canonical" href="https://abubu.com.pe/libro-reclamaciones.php">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
