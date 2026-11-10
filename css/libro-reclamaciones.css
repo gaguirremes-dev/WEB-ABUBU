@@ -241,3 +241,6 @@
   .lr-dl { grid-template-columns: 200px 1fr; }
   a[href]::after { content: none !important; }
 }
+
+/* hCaptcha */
+.lr-captcha { margin: 20px 0 4px; min-height: 78px; }

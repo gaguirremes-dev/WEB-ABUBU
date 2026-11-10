@@ -17,13 +17,29 @@ session_set_cookie_params([
 ]);
 session_start();
 
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: same-origin');
+header('Cache-Control: no-store');
+
 require_once __DIR__ . '/lib/ReclamoRepository.php';
 require_once __DIR__ . '/lib/SmtpMailer.php';
+require_once __DIR__ . '/lib/AntiSpam.php';
+require_once __DIR__ . '/lib/Captcha.php';
 
-const LR_MAX_ENVIOS_HORA = 5;
-const LR_MIN_SEGUNDOS    = 3;
+const LR_MIN_SEGUNDOS    = 5;      // llenar el formulario más rápido = bot
+const LR_MAX_SEGUNDOS    = 7200;   // la sesión del formulario vale 2 h
+const LR_MAX_BODY_BYTES  = 65536;
 
 $repo = new ReclamoRepository(__DIR__ . '/data');
+$spam = new AntiSpam(__DIR__ . '/data');
+$captcha = new Captcha(mail_config());
+
+if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD', 'POST'], true)) {
+    header('Allow: GET, HEAD, POST');
+    http_response_code(405);
+    exit;
+}
 
 /* ─────────────────────────── Helpers ─────────────────────────── */
 
@@ -76,6 +92,40 @@ function mail_config(): array
     }
 
     return require $example;
+}
+
+/** Registro interno de rechazos (error_log); nunca se muestra al visitante. */
+function lr_block_log(string $reason): void
+{
+    error_log('[Libro de Reclamaciones] Bloqueado (' . $reason . ') desde ' . AntiSpam::clientIp());
+}
+
+/** El POST debe venir de este mismo sitio: se compara el host de Origin o, si falta, de Referer. */
+function lr_same_origin(): bool
+{
+    $source = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($source === '') {
+        $source = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+    }
+    if ($source === '') {
+        return false;
+    }
+
+    $host = parse_url($source, PHP_URL_HOST);
+    $port = parse_url($source, PHP_URL_PORT);
+    if (!is_string($host) || $host === '') {
+        return false;
+    }
+    if ($port) {
+        $host .= ':' . $port;
+    }
+
+    $own  = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+    $host = strtolower($host);
+    $own  = preg_replace('/^www\./', '', $own) ?? $own;
+    $host = preg_replace('/^www\./', '', $host) ?? $host;
+
+    return $own !== '' && $host === $own;
 }
 
 function fecha_larga(string $date): string
@@ -199,18 +249,22 @@ function lr_send_emails(array $record): array
         error_log('[Libro de Reclamaciones] Error SMTP (proveedor): ' . $e->getMessage());
     }
 
-    try {
-        $mailer->send(
-            $d['email'],
-            'Constancia de tu reclamo ' . $record['codigo'] . ' – Abubu',
-            lr_email_shell('Constancia de reclamo', $consumerBody),
-            $cfg['from'],
-            'Abubu'
-        );
-        $consumerOk = true;
-    } catch (Throwable $e) {
-        $fallas[] = 'consumidor: ' . $e->getMessage();
-        error_log('[Libro de Reclamaciones] Error SMTP (consumidor): ' . $e->getMessage());
+    // La copia al consumidor solo sale si el aviso interno ya fue entregado:
+    // si falla el interno, el reclamo queda guardado y se atiende desde el archivo.
+    if ($businessOk) {
+        try {
+            $mailer->send(
+                $d['email'],
+                'Constancia de tu reclamo ' . $record['codigo'] . ' – Abubu',
+                lr_email_shell('Constancia de reclamo', $consumerBody),
+                $cfg['from'],
+                'Abubu'
+            );
+            $consumerOk = true;
+        } catch (Throwable $e) {
+            $fallas[] = 'consumidor: ' . $e->getMessage();
+            error_log('[Libro de Reclamaciones] Error SMTP (consumidor): ' . $e->getMessage());
+        }
     }
 
     return [
@@ -229,6 +283,32 @@ function lr_validate(array $input): array
 {
     $errors = [];
     $data   = [];
+
+    // Texto UTF-8 válido, sin caracteres de control y sin enlaces en cantidad.
+    // Solo detalle y pedido admiten saltos de línea; el resto es de una línea
+    // (así ningún CR/LF llega a las cabeceras del correo).
+    $multiline = ['detalle', 'pedido'];
+    foreach (['nombre', 'doc_numero', 'domicilio', 'telefono', 'email', 'tutor_nombre', 'tutor_documento',
+              'bien_descripcion', 'monto', 'pedido_ref', 'detalle', 'pedido'] as $key) {
+        $raw = is_string($input[$key] ?? null) ? $input[$key] : '';
+        $bad = !mb_check_encoding($raw, 'UTF-8');
+        if ($bad) {
+            $raw = '';
+        }
+        $raw = preg_replace('/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}\x{007F}]/u', '', $raw) ?? '';
+        if (!in_array($key, $multiline, true)) {
+            $raw = preg_replace('/\s+/u', ' ', $raw) ?? '';
+        }
+        $raw = trim($raw);
+        $input[$key] = $raw;
+        if ($bad) {
+            $errors[$key] = 'El texto contiene caracteres no válidos.';
+        } elseif (preg_match_all('~(?:https?://|www\.)~i', $raw) > 2
+            || stripos($raw, '<a ') !== false
+            || stripos($raw, '[url=') !== false) {
+            $errors[$key] = 'No incluyas enlaces en este campo.';
+        }
+    }
 
     $data['tipo_reclamo'] = in_array($input['tipo_reclamo'] ?? '', ['reclamo', 'queja'], true)
         ? (string) $input['tipo_reclamo'] : '';
@@ -336,7 +416,9 @@ $enviado     = false;
 if (empty($_SESSION['lr_csrf'])) {
     $_SESSION['lr_csrf'] = bin2hex(random_bytes(16));
 }
-if (empty($_SESSION['lr_ts'])) {
+if (empty($_SESSION['lr_ts'])
+    || ($_SERVER['REQUEST_METHOD'] !== 'POST' && time() - (int) $_SESSION['lr_ts'] > LR_MAX_SEGUNDOS)) {
+    // Al cargar el formulario se renueva la marca de tiempo si ya venció
     $_SESSION['lr_ts'] = time();
 }
 
@@ -364,31 +446,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfOk    = hash_equals((string) ($_SESSION['lr_csrf'] ?? ''), post('csrf'));
     $honeypot  = post('website') !== '';
     $elapsed   = time() - (int) ($_SESSION['lr_ts'] ?? time());
-    $envios    = array_values(array_filter(
-        (array) ($_SESSION['lr_envios'] ?? []),
-        static fn($ts) => is_int($ts) && $ts > time() - 3600
-    ));
 
-    if (!$csrfOk) {
+    if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > LR_MAX_BODY_BYTES) {
+        lr_block_log('cuerpo excesivo');
+        $httpStatus = 413;
+        $general = 'No pudimos procesar el formulario. Inténtalo nuevamente.';
+    } elseif (!lr_same_origin()) {
+        lr_block_log('origen no coincide');
+        $httpStatus = 403;
+        $general = 'No pudimos procesar el formulario. Recarga la página e inténtalo nuevamente.';
+    } elseif (!$csrfOk) {
         $general = 'Tu sesión expiró. Vuelve a cargar la página e inténtalo otra vez.';
         $_SESSION['lr_csrf'] = bin2hex(random_bytes(16));
         $_SESSION['lr_ts']   = time();
     } elseif ($honeypot) {
+        lr_block_log('honeypot');
         $general = 'No pudimos procesar el formulario. Inténtalo nuevamente.';
     } elseif ($elapsed < LR_MIN_SEGUNDOS) {
         $general = 'El formulario se envió demasiado rápido. Revisa los datos e inténtalo otra vez.';
-    } elseif (count($envios) >= LR_MAX_ENVIOS_HORA) {
-        $general = 'Registramos varios envíos desde tu conexión. Espera unos minutos o escríbenos a reclamaciones@abubu.com.pe.';
+    } elseif ($elapsed > LR_MAX_SEGUNDOS) {
+        $general = 'Tu sesión expiró. Vuelve a cargar la página e inténtalo otra vez.';
     } else {
         [$data, $errors] = lr_validate($_POST);
 
+        // hCaptcha (fail-closed): después de las comprobaciones baratas y de la
+        // validación de campos, y antes de reservar cupo o enviar correo.
+        $captchaOk = true;
         if ($errors === []) {
+            $captchaOk = $captcha->verify(post('h-captcha-response'), AntiSpam::clientIp(), $captchaReason);
+            if (!$captchaOk) {
+                lr_block_log('captcha ' . $captchaReason);
+                $httpStatus = 400;
+                $general = 'No pudimos verificar que eres una persona. Marca la casilla de verificación e inténtalo de nuevo.';
+            }
+        }
+
+        // Límites por IP y globales, y contenido repetido: se reserva el cupo
+        // de forma atómica recién cuando el formulario ya es válido.
+        if (!$captchaOk) {
+            // ya se informó arriba
+        } elseif ($errors === []
+            && !$spam->reserve(
+                AntiSpam::clientIp(),
+                mb_strtolower($data['email'] . '|' . $data['nombre'] . '|' . $data['detalle'] . '|' . $data['pedido']),
+                $limitReason
+            )) {
+            lr_block_log('limite ' . $limitReason);
+            $httpStatus = 429;
+            $general = 'Registramos varios envíos desde tu conexión. Espera unos minutos o escríbenos a reclamaciones@abubu.com.pe.';
+        } elseif ($errors === []) {
             try {
                 $record = $repo->save($data);
                 $envio  = lr_send_emails($record);
                 $repo->markNotification($record['codigo'], $envio['ok'], $envio['error']);
 
-                $_SESSION['lr_envios'][] = time();
                 $_SESSION['lr_csrf']     = bin2hex(random_bytes(16));
                 $_SESSION['lr_ts']       = time();
 
@@ -837,6 +948,11 @@ $titulo = $constancia !== null
             </label>
             <?= error_html('acepta', $errors) ?>
 
+            <div class="lr-captcha">
+              <div class="h-captcha" data-sitekey="<?= h($captcha->siteKey()) ?>" data-theme="light"></div>
+              <noscript><p class="lr-error show">Activa JavaScript para completar la verificación anti-robots.</p></noscript>
+            </div>
+
             <div class="lr-actions">
               <button type="submit" class="btn btn-primary">Enviar hoja de reclamación</button>
               <p class="lr-actions-note">Al enviar recibirás el número de hoja y una copia en tu correo. Plazo de respuesta: 30 días calendario.</p>
@@ -883,6 +999,9 @@ $titulo = $constancia !== null
 
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script src="js/main.js"></script>
+<?php if ($constancia === null): ?>
+<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+<?php endif; ?>
 <script>
   (function () {
     // Enfoca el resumen de errores para lectores de pantalla y teclado

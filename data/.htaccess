@@ -7,3 +7,6 @@
     Order allow,deny
     Deny from all
 </IfModule>
+
+# Sin listado de directorios
+Options -Indexes

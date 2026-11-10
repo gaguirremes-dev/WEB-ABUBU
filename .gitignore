@@ -5,6 +5,8 @@
 /data/records/
 /data/counter.txt
 /data/mail-error.log
+/data/ratelimit.json
+/data/ratelimit.salt
 
 # Basura del sistema
 .DS_Store

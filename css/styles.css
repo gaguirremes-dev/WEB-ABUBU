@@ -713,35 +713,43 @@ footer {
 }
 .footer-social a:active { transform: scale(0.95); }
 
-/* Aviso del Libro de Reclamaciones (imagen clickeable, bajo el newsletter) */
-.footer-book {
-  display: inline-block;
-  margin-top: 20px;
-  padding: 6px;
+/* Tarjeta del Libro de Reclamaciones (footer, columna de marca) */
+.footer-lr-card { margin-top: 20px; }
+.footer-lr-card__link {
+  display: block;
+  width: 130px;
+  overflow: hidden;
   background: #fff;
-  border-radius: 9px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+  border-radius: 1rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18), 0 0 0 1px rgba(255, 255, 255, .25);
   transition: transform 200ms var(--ease-out),
               box-shadow 200ms var(--ease-out);
 }
-.footer-book img {
+.footer-lr-card__link picture { display: block; }
+.footer-lr-card__link img {
   display: block;
-  width: 132px;
+  width: 100%;
   height: auto;
-  border-radius: 4px;
+  object-fit: cover;
+  border-radius: inherit;
 }
-.footer-book:focus-visible {
+.footer-lr-card__link:focus-visible {
   outline: 3px solid var(--highlight);
   outline-offset: 3px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .footer-book:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 26px rgba(0, 0, 0, .26);
-  }
+.footer-lr-card__mail {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: .8125rem;
+  color: rgba(255, 255, 255, .6);
+  overflow-wrap: anywhere;
 }
-@media (max-width: 420px) {
-  .footer-book img { width: 112px; }
+.footer-lr-card__mail:hover { color: #fff; text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .footer-lr-card__link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 26px rgba(0, 0, 0, .28), 0 0 0 1px rgba(255, 255, 255, .35);
+  }
 }
 
 /* ── Contacto directo en footer ── */

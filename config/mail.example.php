@@ -15,4 +15,12 @@ return [
     'from_name' => 'Libro de Reclamaciones – Abubu',
     'to'        => ['reclamaciones@abubu.com.pe'],
     'timeout'   => 15,
+
+    // hCaptcha (https://dashboard.hcaptcha.com). Registrar abubu.com.pe en el
+    // panel. Sin claves el envío del formulario se rechaza (fail-closed).
+    'captcha'   => [
+        'site_key'        => 'TU_SITE_KEY_AQUI',
+        'secret'          => 'TU_SECRET_KEY_AQUI',
+        'allow_localhost' => false,   // true solo en desarrollo local
+    ],
 ];
