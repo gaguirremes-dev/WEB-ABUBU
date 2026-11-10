@@ -14,9 +14,9 @@
         <p>Tu tienda de confianza para los productos más especiales para tu bebé. Calidad, ternura y amor en cada producto.</p>
         <ul class="footer-contact">
           <li>
-            <a href="mailto:info@somosabubu.com.pe">
+            <a href="mailto:comercial@abubu.com.pe">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z"/><path d="M22.5 6.908V6.75a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3v.158l9.714 5.978a1.5 1.5 0 0 0 1.572 0L22.5 6.908Z"/></svg>
-              info@somosabubu.com.pe
+              comercial@abubu.com.pe
             </a>
           </li>
           <li>
